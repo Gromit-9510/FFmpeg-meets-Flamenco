@@ -128,3 +128,29 @@ dist/
 *.exe
 *.msi
 *.dmg
+
+# Test files
+test_*.py
+demo_*.py
+*_test.py
+
+# Documentation files (keep only README.md and LICENSE)
+*.md
+!README.md
+!LICENSE
+
+# Batch files
+*.bat
+
+# Requirements files (keep only pyproject.toml)
+requirements.txt
+
+# Egg info
+*.egg-info/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
