@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ffmpeg-encoder"
+version = "2.0.0"
+description = "A powerful Windows FFmpeg Encoder with queue management, presets, and Flamenco distributed processing integration"
+authors = [
+    {name = "Insoo Chang", email = "insu9510@gmail.com"}
+]
+readme = "README.md"
+license = {text = "MIT"}
+keywords = ["ffmpeg", "video", "encoding", "flamenco", "batch", "gui"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Video :: Conversion",
+    "Topic :: Multimedia :: Video :: Non-Linear Editor",
+]
+requires-python = ">=3.10"
+dependencies = [
+  "PySide6>=6.6",
+  "requests>=2.31",
+  "pydantic>=2.7",
+  "pandas>=2.2",
+  "openpyxl>=3.1",
+  "colorlog>=6.8",
+  "PyYAML>=6.0",
+]
+
+[project.scripts]
+ffmpeg-encoder = "ffmpeg_encoder.app:main"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ffmpeg_encoder*"]
