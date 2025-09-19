@@ -1,7 +1,7 @@
 # FFmpeg Encoder v2.0
 
 **Author:** Insoo Chang (insu9510@gmail.com)  
-**GitHub:** https://github.com/insu9510/ffmpeg-encoder  
+**GitHub:** https://github.com/Gromit-9510/FFmpeg-meets-Flamenco  
 **License:** LGPL 3.0+ (Non-commercial use only)
 
 A powerful Windows desktop FFmpeg encoding tool with queue management, presets, logging, and Flamenco distributed processing integration.
@@ -45,18 +45,24 @@ python -m ffmpeg_encoder.app
 ```
 
 ## Build (Windows EXE)
-We use PyInstaller.
+We use PyInstaller with a spec file for better control.
 ```bash
-# Quick build
-python build_exe.py
-
-# Or manual build
+# Install dependencies
 py -m pip install -U pip
 py -m pip install -e .
 py -m pip install pyinstaller
+
+# Build using spec file
 py -m PyInstaller build.spec
 ```
-The executable will be `dist/FFmpegEncoder.exe` (~51MB).
+The executable will be `dist/FFmpegEncoder_v2.exe` (~51MB).
+
+### Build Configuration
+The `build.spec` file contains all PyInstaller configuration:
+- Includes all necessary data files and dependencies
+- Optimized for single-file executable
+- Includes FFmpeg integration files
+- Configured for Windows platform
 
 ## Quick Start
 ```bash
@@ -64,7 +70,7 @@ The executable will be `dist/FFmpegEncoder.exe` (~51MB).
 python -m ffmpeg_encoder.app
 
 # Or run executable
-dist\FFmpegEncoder.exe
+dist\FFmpegEncoder_v2.exe
 
 # Or use launcher
 run_ffmpeg_encoder.bat
@@ -77,14 +83,14 @@ run_ffmpeg_encoder.bat
 ## Installation
 
 ### Pre-built Executable (Recommended)
-1. Download the latest release from [GitHub Releases](https://github.com/insu9510/ffmpeg-encoder/releases)
+1. Download the latest release from [GitHub Releases](https://github.com/Gromit-9510/FFmpeg-meets-Flamenco/releases)
 2. Extract and run `FFmpegEncoder_v2.exe`
 3. Ensure FFmpeg is installed and available on your system PATH
 
 ### From Source
 ```bash
-git clone https://github.com/insu9510/ffmpeg-encoder.git
-cd ffmpeg-encoder
+git clone https://github.com/Gromit-9510/FFmpeg-meets-Flamenco.git
+cd FFmpeg-meets-Flamenco
 pip install -e .
 python -m ffmpeg_encoder.app
 ```
