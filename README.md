@@ -6,6 +6,8 @@
 
 A powerful Windows desktop FFmpeg encoding tool with queue management, presets, logging, and Flamenco distributed processing integration.
 
+#I don’t understand a single line of the code I created
+
 ## Features
 
 ### 🎥 Video Encoding
