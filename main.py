@@ -5,7 +5,26 @@ Main entry point for FFmpeg Encoder - standalone script for PyInstaller.
 
 import sys
 import platform
+import os
 from pathlib import Path
+
+# Completely suppress console output for PyInstaller builds
+if getattr(sys, 'frozen', False):
+    # Running as compiled executable
+    import subprocess
+    
+    # Open devnull file and keep it open
+    devnull = open(os.devnull, 'w')
+    sys.stdout = devnull
+    sys.stderr = devnull
+        
+    # Also suppress subprocess output
+    original_run = subprocess.run
+    def silent_run(*args, **kwargs):
+        kwargs['stdout'] = devnull
+        kwargs['stderr'] = devnull
+        return original_run(*args, **kwargs)
+    subprocess.run = silent_run
 
 # Add the current directory to Python path
 sys.path.insert(0, str(Path(__file__).parent))

@@ -34,11 +34,9 @@ class SettingsPanel(QWidget):
 		self.flamenco_config_path.parent.mkdir(exist_ok=True)
 
 		tabs = QTabWidget()
-		tabs.addTab(self._build_video_tab(), "Video")
-		tabs.addTab(self._build_audio_tab(), "Audio")
-		tabs.addTab(self._build_output_tab(), "Output")
+		tabs.addTab(self._build_video_tab(), "Settings")
 		tabs.addTab(self._build_flamenco_tab(), "Flamenco")
-		tabs.addTab(self._build_advanced_tab(), "Advanced")
+		tabs.addTab(self._build_guide_tab(), "Guide")
 		layout.addWidget(tabs)
 
 		preset_row = QHBoxLayout()
@@ -65,90 +63,152 @@ class SettingsPanel(QWidget):
 		layout = QVBoxLayout(w)
 		
 		# Container format
-		container_group = QGroupBox("컨테이너 형식")
+		container_group = QGroupBox("Container Format")
 		container_layout = QFormLayout(container_group)
 		self.container_format = QComboBox()
 		self.container_format.addItems(["mp4", "mkv", "mov", "avi", "webm"])
-		container_layout.addRow("형식:", self.container_format)
+		self.container_format.currentTextChanged.connect(self._on_container_changed)
+		container_layout.addRow("Format:", self.container_format)
 		layout.addWidget(container_group)
 		
 		# Video codec selection
-		codec_group = QGroupBox("비디오 코덱")
+		codec_group = QGroupBox("Settings")
 		codec_layout = QVBoxLayout(codec_group)
 		
 		self.video_codec = QComboBox()
-		self.codec_description = QLabel("코덱을 선택하세요")
+		self.codec_description = QLabel("Select a codec")
 		self.codec_description.setWordWrap(True)
 		self.codec_description.setStyleSheet("color: #666; font-size: 11px;")
 		
 		# Populate codecs
-		self._populate_user_friendly_codecs()
+		container = self.container_format.currentText()
+		self._populate_user_friendly_codecs(container)
 		
 		# Connect codec change to update description
 		self.video_codec.currentTextChanged.connect(self._on_codec_changed)
 		
-		codec_layout.addWidget(QLabel("코덱:"))
+		codec_layout.addWidget(QLabel("Codec:"))
 		codec_layout.addWidget(self.video_codec)
 		codec_layout.addWidget(self.codec_description)
 		layout.addWidget(codec_group)
 		
 		# Quality settings
-		quality_group = QGroupBox("품질 설정")
+		quality_group = QGroupBox("Quality Settings")
 		quality_layout = QFormLayout(quality_group)
 		
 		self.crf = QSpinBox()
 		self.crf.setRange(0, 51)
 		self.crf.setValue(18)
-		self.crf.setToolTip("0=무손실, 18=고품질, 23=기본, 28=저품질, 51=최저품질")
+		self.crf.setToolTip("0=lossless, 18=high quality, 23=default, 28=low quality, 51=lowest quality")
+		self.crf.valueChanged.connect(self._on_crf_changed)
 		
 		self.bitrate = QLineEdit()
-		self.bitrate.setPlaceholderText("예: 8M 또는 2000k")
-		self.bitrate.setToolTip("비트레이트 (예: 8M, 2000k)")
+		self.bitrate.setPlaceholderText("e.g. 8M or 2000k")
+		self.bitrate.setToolTip("Bitrate (e.g. 8M, 2000k)")
 		
-		quality_layout.addRow("CRF (품질):", self.crf)
-		quality_layout.addRow("비트레이트:", self.bitrate)
+		quality_layout.addRow("CRF (Quality):", self.crf)
+		quality_layout.addRow("Bitrate:", self.bitrate)
 		layout.addWidget(quality_group)
 		
-		# Encoding options
-		options_group = QGroupBox("인코딩 옵션")
-		options_layout = QVBoxLayout(options_group)
 		
-		self.two_pass = QCheckBox("2패스 인코딩 (더 정확한 비트레이트 제어)")
-		self.two_pass.setToolTip("첫 번째 패스에서 분석, 두 번째 패스에서 인코딩")
-		self.two_pass.stateChanged.connect(self._on_two_pass_changed)
+		# Audio settings
+		audio_group = QGroupBox("Audio Settings")
+		audio_layout = QFormLayout(audio_group)
 		
-		options_layout.addWidget(self.two_pass)
-		layout.addWidget(options_group)
+		self.audio_codec = QComboBox()
+		self._populate_audio_codecs()
+		self.audio_bitrate = QLineEdit()
+		self.audio_bitrate.setPlaceholderText("e.g. 192k")
+		self.audio_bitrate.setText("192k")  # Set default value
+		audio_layout.addRow("Audio codec:", self.audio_codec)
+		audio_layout.addRow("Audio bitrate:", self.audio_bitrate)
+		layout.addWidget(audio_group)
+		
+		# Advanced options
+		advanced_group = QGroupBox("Advanced Options")
+		advanced_layout = QFormLayout(advanced_group)
+		
+		self.max_filesize = QLineEdit()
+		self.max_filesize.setPlaceholderText("e.g. 700M")
+		self.max_filesize.setToolTip("Maximum file size (e.g. 700M, 1G)")
+		
+		self.extra_params = QLineEdit()
+		self.extra_params.setPlaceholderText("Additional FFmpeg params, e.g. -preset slow -tune film")
+		self.extra_params.setToolTip("Additional FFmpeg parameters")
+		
+		advanced_layout.addRow("Max File Size:", self.max_filesize)
+		advanced_layout.addRow("Extra Params:", self.extra_params)
+		layout.addWidget(advanced_group)
 		
 		layout.addStretch()
 		return w
 
-	def _populate_user_friendly_codecs(self) -> None:
+	def _populate_user_friendly_codecs(self, container: str = None) -> None:
 		"""Populate codec lists with user-friendly names."""
+		# Store codec data for later use
+		self.codec_data = {}
+		
+		# Clear existing codecs
+		self.video_codec.clear()
+		
+		# Always add comprehensive fallback codecs
+		fallback_codecs = [
+			{"id": "libx264", "name": "libx264 (CPU)", "description": ""},
+			{"id": "libx264_ll", "name": "libx264 (CPU) Low Latency", "description": "low latency"},
+			{"id": "h264_nvenc", "name": "H.264 (GPU)", "description": ""},
+			{"id": "h264_nvenc_ll", "name": "H.264 (GPU) Low Latency", "description": "low latency"},
+			{"id": "separator1", "name": "─────────────────────────", "description": "", "separator": True},
+			{"id": "libx265", "name": "libx265 (CPU)", "description": ""},
+			{"id": "libx265_ll", "name": "libx265 (CPU) Low Latency", "description": "low latency"},
+			{"id": "hevc_nvenc", "name": "H.265 (GPU)", "description": ""},
+			{"id": "hevc_nvenc_ll", "name": "H.265 (GPU) Low Latency", "description": "low latency"},
+			{"id": "separator2", "name": "─────────────────────────", "description": "", "separator": True},
+			{"id": "libvpx-vp9", "name": "libvpx-vp9 (CPU)", "description": ""},
+			{"id": "libaom-av1", "name": "libaom-av1 (CPU)", "description": ""},
+		]
+		
+		for codec in fallback_codecs:
+			if codec.get("separator", False):
+				display_name = codec['name']
+			else:
+				display_name = f"{codec['name']} {codec['description']}".strip()
+			self.video_codec.addItem(display_name, codec['id'])
+			self.codec_data[codec['id']] = codec
+		
+		# Set default selection
+		self.video_codec.setCurrentIndex(0)
+		self._on_codec_changed()
+		
+		# Try to load additional codecs from FFmpeg (optional)
 		try:
 			from ..utils.ffmpeg_check import get_user_friendly_codecs
-			codecs = get_user_friendly_codecs()
+			codecs = get_user_friendly_codecs(container)
 			
-			# Store codec data for later use
-			self.codec_data = {}
-			
-			# Add video codecs
+			# Only add if we get more codecs than fallback
 			video_codecs = codecs.get("video", [])
-			for codec in video_codecs:
-				display_name = f"{codec['name']} - {codec['description']}"
-				self.video_codec.addItem(display_name, codec['id'])
-				self.codec_data[codec['id']] = codec
-			
-			# Set default selection
-			if video_codecs:
-				self.video_codec.setCurrentIndex(0)
-				self._on_codec_changed()
+			if len(video_codecs) > len(fallback_codecs):
+				# Clear and reload with all codecs
+				self.video_codec.clear()
+				self.codec_data = {}
+				
+				for codec in video_codecs:
+					if codec.get("separator", False):
+						display_name = codec['name']
+					else:
+						display_name = f"{codec['name']} {codec['description']}".strip()
+					self.video_codec.addItem(display_name, codec['id'])
+					self.codec_data[codec['id']] = codec
+				
+				# Set default selection
+				if video_codecs:
+					self.video_codec.setCurrentIndex(0)
+					self._on_codec_changed()
 				
 		except Exception as e:
-			print(f"Error populating codecs: {e}")
-			# Fallback to basic codecs
-			self.video_codec.addItem("H.264 (x264) - 고품질 H.264 인코딩 (CPU)", "libx264")
-			self.video_codec.addItem("H.265/HEVC (x265) - 고품질 H.265 인코딩 (CPU)", "libx265")
+			import traceback
+			print(f"Error loading additional codecs: {e}")
+			print(f"Traceback: {traceback.format_exc()}")
+			# Keep fallback codecs that were already added
 
 	def _on_codec_changed(self) -> None:
 		"""Handle codec selection change."""
@@ -159,17 +219,11 @@ class SettingsPanel(QWidget):
 		else:
 			self.codec_description.setText("코덱을 선택하세요")
 		
-		# Check 2-pass compatibility only if two_pass is initialized
-		if hasattr(self, 'two_pass'):
-			self._check_two_pass_compatibility()
 		
 		# Update CRF visibility only if crf is initialized
 		if hasattr(self, 'crf'):
 			self._update_crf_visibility()
 	
-	def _on_two_pass_changed(self) -> None:
-		"""Handle 2-pass checkbox change."""
-		self._check_two_pass_compatibility()
 	
 	def _update_crf_visibility(self) -> None:
 		"""Update CRF/QP visibility based on selected codec."""
@@ -197,39 +251,15 @@ class SettingsPanel(QWidget):
 						label = label_item.widget()
 						if isinstance(label, QLabel) and ("CRF" in label.text() or "QP" in label.text()):
 							if supports_crf:
-								label.setText("CRF (품질):")
+								label.setText("CRF (Quality):")
 								label.setVisible(True)
 							elif supports_qp:
-								label.setText("QP (품질):")
+								label.setText("QP (Quality):")
 								label.setVisible(True)
 							else:
 								label.setVisible(False)
 							break
 
-	def _check_two_pass_compatibility(self) -> None:
-		"""Check if current codec supports 2-pass encoding."""
-		if not self.two_pass.isChecked():
-			return
-		
-		current_data = self.video_codec.currentData()
-		if not current_data:
-			return
-		
-		# Get base codec (remove _ll suffix if present)
-		base_codec = current_data.replace("_ll", "")
-		
-		# Check if codec supports 2-pass
-		supports_two_pass = base_codec in ["libx264", "libx265", "h264_nvenc", "hevc_nvenc"]
-		
-		if not supports_two_pass:
-			from PySide6.QtWidgets import QMessageBox
-			QMessageBox.warning(
-				self, 
-				"2패스 인코딩 지원 안함", 
-				f"선택한 코덱 '{current_data}'은 2패스 인코딩을 지원하지 않습니다.\n"
-				f"2패스 인코딩은 libx264, libx265, h264_nvenc, hevc_nvenc에서만 사용 가능합니다."
-			)
-			self.two_pass.setChecked(False)
 
 	def _populate_codecs(self) -> None:
 		"""Populate codec lists with available encoders."""
@@ -249,17 +279,6 @@ class SettingsPanel(QWidget):
 			# Fallback to common codecs
 			self.video_codec.addItems(["libx264", "libx265", "libvpx-vp9", "libaom-av1", "prores_ks", "dnxhd", "h264_nvenc", "hevc_nvenc", "h264_qsv", "hevc_qsv"])
 
-	def _build_audio_tab(self) -> QWidget:
-		w = QWidget()
-		form = QFormLayout(w)
-		self.audio_codec = QComboBox()
-		# Will be populated with available audio codecs
-		self._populate_audio_codecs()
-		self.audio_bitrate = QLineEdit()
-		self.audio_bitrate.setPlaceholderText("e.g. 192k")
-		form.addRow("Audio codec", self.audio_codec)
-		form.addRow("Audio bitrate", self.audio_bitrate)
-		return w
 
 	def _populate_audio_codecs(self) -> None:
 		"""Populate audio codec list with available encoders."""
@@ -279,82 +298,85 @@ class SettingsPanel(QWidget):
 			# Fallback to common codecs
 			self.audio_codec.addItems(["aac", "libmp3lame", "libopus", "libvorbis", "ac3", "flac", "pcm_s16le"])
 
-	def _build_output_tab(self) -> QWidget:
+	def _build_guide_tab(self) -> QWidget:
 		w = QWidget()
-		form = QFormLayout(w)
+		layout = QVBoxLayout(w)
 		
-		# Output path settings
-		self.output_mode = QComboBox()
-		self.output_mode.addItems(["Global", "Individual"])
-		self.output_mode.setCurrentText("Global")
+		guide_text = QLabel("""
+		<h2>FFmpeg Encoder 사용법</h2>
 		
-		self.global_output_path = QLineEdit()
-		self.global_output_path.setPlaceholderText("Select global output folder")
-		self.browse_output_btn = QPushButton("Browse...")
+		<h3>1. 파일 추가</h3>
+		<p>• <b>Add Files:</b> 개별 비디오 파일 선택</p>
+		<p>• <b>Add Folder:</b> 폴더 내 모든 비디오 파일 자동 추가</p>
 		
-		# Output filename pattern
-		self.filename_pattern = QLineEdit()
-		self.filename_pattern.setText("{name}_{codec}_{quality}")
-		self.filename_pattern.setPlaceholderText("e.g., {name}_{codec}_{quality}")
+		<h3>2. 파일 선택</h3>
+		<p>• 체크박스로 인코딩할 파일 선택</p>
+		<p>• <b>CTRL/Shift:</b> 다중선택</p>
+		<p>• <b>Select All/Deselect All:</b> 전체 선택/해제</p>
 		
-		# Overwrite options
-		self.overwrite_mode = QComboBox()
-		self.overwrite_mode.addItems(["Ask", "Skip", "Overwrite", "Rename"])
-		self.overwrite_mode.setCurrentText("Ask")
+		<h3>3. 인코딩 설정</h3>
+		<p>• <b>Video:</b> 코덱, 품질(CRF/QP), 저지연 모드</p>
+		<p>• <b>Audio:</b> 오디오 코덱, 비트레이트</p>
+		<p>• <b>Flamenco:</b> 분산 인코딩 설정</p>
 		
-		# Connect browse button
-		self.browse_output_btn.clicked.connect(self._browse_output_folder)
+		<h3>4. 인코딩 실행</h3>
+		<p>• <b>Encode with FFmpeg:</b> 로컬 인코딩</p>
+		<p>• <b>Submit to Flamenco:</b> 분산 인코딩</p>
+		<p>• 출력 설정 다이얼로그에서 폴더, 파일명 패턴 설정</p>
 		
-		form.addRow("Output Mode", self.output_mode)
-		form.addRow("Global Output Path", self.global_output_path)
-		form.addRow("", self.browse_output_btn)
-		form.addRow("Filename Pattern", self.filename_pattern)
-		form.addRow("If File Exists", self.overwrite_mode)
+		<h3>5. 큐 관리</h3>
+		<p>• <b>Remove Selected:</b> 선택된 항목 삭제</p>
+		<p>• <b>Batch Rename:</b> 체크된 파일 일괄 이름변경</p>
+		<p>• <b>Select All/Deselect All:</b> 전체 선택/해제</p>
 		
+		<h3>6. 프리셋</h3>
+		<p>• 자주 사용하는 설정을 프리셋으로 저장/불러오기</p>
+		<p>• Export/Import로 프리셋 공유 가능</p>
+		""")
+		guide_text.setWordWrap(True)
+		guide_text.setStyleSheet("padding: 20px; line-height: 1.5;")
+		layout.addWidget(guide_text)
+		
+		layout.addStretch()
 		return w
-
-	def _browse_output_folder(self) -> None:
-		folder = QFileDialog.getExistingDirectory(self, "Select output folder")
-		if folder:
-			self.global_output_path.setText(folder)
 
 	def _build_flamenco_tab(self) -> QWidget:
 		w = QWidget()
 		form = QFormLayout(w)
 		
-		# Flamenco 경로 선택
+		# Flamenco path selection
 		self.flamenco_path = QLineEdit()
-		self.flamenco_path.setPlaceholderText("Flamenco 설치 경로를 선택하세요")
-		self.browse_flamenco_btn = QPushButton("Flamenco 경로 선택")
+		self.flamenco_path.setPlaceholderText("Select Flamenco installation path")
+		self.browse_flamenco_btn = QPushButton("Browse Flamenco Path")
 		self.browse_flamenco_btn.clicked.connect(self._browse_flamenco_path)
 		
-		# 자동 설정 버튼
-		self.auto_config_btn = QPushButton("자동 설정 불러오기")
+		# Auto config button
+		self.auto_config_btn = QPushButton("Auto Load Config")
 		self.auto_config_btn.clicked.connect(self._auto_load_flamenco_config)
 		self.auto_config_btn.setEnabled(False)
 		
-		# Flamenco 설정 버튼
-		self.setup_flamenco_btn = QPushButton("Flamenco FFmpeg 호환 설정")
+		# Flamenco setup button
+		self.setup_flamenco_btn = QPushButton("Setup Flamenco for FFmpeg")
 		self.setup_flamenco_btn.clicked.connect(self._setup_flamenco_for_ffmpeg)
 		self.setup_flamenco_btn.setEnabled(False)
 		
-		# 수동 설정
+		# Manual settings
 		self.flamenco_base_url = QLineEdit()
 		self.flamenco_base_url.setPlaceholderText("http://localhost:8080")
 		self.flamenco_token = QLineEdit()
 		self.flamenco_token.setPlaceholderText("API token")
 		self.flamenco_token.setEchoMode(QLineEdit.Password)
 		
-		# 상태 표시
-		self.flamenco_status = QLabel("Flamenco 경로를 선택하세요")
+		# Status display
+		self.flamenco_status = QLabel("Select Flamenco path")
 		self.flamenco_status.setStyleSheet("color: gray;")
 		
-		form.addRow("Flamenco 경로", self.flamenco_path)
+		form.addRow("Flamenco Path", self.flamenco_path)
 		form.addRow("", self.browse_flamenco_btn)
 		form.addRow("", self.auto_config_btn)
 		form.addRow("", self.setup_flamenco_btn)
 		form.addRow("", self.flamenco_status)
-		form.addRow("", QLabel("또는 수동으로 설정:"))
+		form.addRow("", QLabel("Or configure manually:"))
 		form.addRow("Base URL", self.flamenco_base_url)
 		form.addRow("API Token", self.flamenco_token)
 		
@@ -486,13 +508,19 @@ class SettingsPanel(QWidget):
 			self.flamenco_status.setText("Flamenco 경로를 선택하세요")
 			self.flamenco_status.setStyleSheet("color: gray;")
 
-	def _build_advanced_tab(self) -> QWidget:
-		w = QWidget()
-		form = QFormLayout(w)
-		self.max_filesize = QLineEdit()
-		self.max_filesize.setPlaceholderText("e.g. 700M")
-		self.extra_params = QLineEdit()
-		self.extra_params.setPlaceholderText("Additional FFmpeg params, e.g. -preset slow -tune film")
-		form.addRow("Max file size", self.max_filesize)
-		form.addRow("Extra params", self.extra_params)
-		return w
+	def _on_crf_changed(self) -> None:
+		"""Handle CRF value change - disable bitrate when CRF is used."""
+		crf_value = self.crf.value()
+		# CRF 0-51 is valid range, disable bitrate when CRF is used
+		if 0 <= crf_value <= 51:
+			self.bitrate.setEnabled(False)
+			self.bitrate.setPlaceholderText("Bitrate disabled when using CRF")
+		else:
+			self.bitrate.setEnabled(True)
+			self.bitrate.setPlaceholderText("e.g. 8M or 2000k")
+
+	def _on_container_changed(self) -> None:
+		"""Handle container format change - update available codecs."""
+		container = self.container_format.currentText()
+		self._populate_user_friendly_codecs(container)
+

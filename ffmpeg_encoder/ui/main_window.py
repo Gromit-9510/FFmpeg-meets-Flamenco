@@ -110,7 +110,7 @@ class MainWindow(QMainWindow):
 	def _on_add_files_folders(self) -> None:
 		files, _ = QFileDialog.getOpenFileNames(self, "Select video files")
 		for f in files:
-			self.queue_panel.list_widget.addItem(f)
+			self.queue_panel._add_file_to_queue(f)
 
 	def _collect_settings(self) -> VideoSettings:
 		s = VideoSettings()
@@ -162,88 +162,32 @@ class MainWindow(QMainWindow):
 		self.settings_panel.extra_params.setText(s.extra_params or "")
 
 	def _on_encode_clicked(self) -> None:
-		# Get file paths from queue (using stored data)
-		items = []
-		for i in range(self.queue_panel.list_widget.count()):
-			item = self.queue_panel.list_widget.item(i)
-			file_path = item.data(0)  # Get stored file path
-			if file_path:
-				items.append(file_path)
+		# Get checked file paths from queue
+		checked_files = self.queue_panel.get_checked_files()
 		
-		if not items:
-			self.status.showMessage("큐가 비어있습니다", 3000)
+		if not checked_files:
+			self.status.showMessage("No files selected", 3000)
 			return
 
 		settings = self._collect_settings()
 		
-		# Generate output path based on settings
-		output_path = self._generate_output_path(items[0], settings)
+		# Show output dialog
+		from .output_dialog import OutputDialog
+		dialog = OutputDialog(checked_files, settings, self)
+		if dialog.exec() != QDialog.Accepted:
+			return
+		
+		# Get output path for first file
+		output_path = dialog.get_output_path(checked_files[0])
 		if not output_path:
+			self.status.showMessage("Cannot generate output path", 3000)
 			return
 
-		cmds = build_ffmpeg_commands(items[0], output_path, settings)
+		cmds = build_ffmpeg_commands(checked_files[0], output_path, settings)
 		cmd = cmds[-1]  # Single pass or second pass
 
 		self._start_worker(cmd)
 
-	def _generate_output_path(self, input_path: str, settings: VideoSettings) -> str:
-		"""Generate output path based on settings."""
-		input_file = Path(input_path)
-		
-		# Check output mode
-		if self.settings_panel.output_mode.currentText() == "Global":
-			output_dir = self.settings_panel.global_output_path.text().strip()
-			if not output_dir:
-				# Fallback to file dialog
-				output_path, _ = QFileDialog.getSaveFileName(
-					self, "Select output file", 
-					filter=f"*.{settings.output_extension()}"
-				)
-				return output_path
-		else:
-			# Individual mode - ask for each file
-			output_path, _ = QFileDialog.getSaveFileName(
-				self, "Select output file", 
-				filter=f"*.{settings.output_extension()}"
-			)
-			return output_path
-		
-		# Generate filename based on pattern
-		pattern = self.settings_panel.filename_pattern.text().strip()
-		if not pattern:
-			pattern = "{name}_{codec}_{quality}"
-		
-		# Replace pattern variables
-		filename = pattern.format(
-			name=input_file.stem,
-			codec=settings.video_codec.replace("lib", "").replace("_", ""),
-			quality=f"crf{settings.crf}" if settings.crf else "bitrate",
-			container=settings.container
-		)
-		
-		output_file = Path(self.settings_panel.global_output_path.text().strip()) / f"{filename}.{settings.output_extension()}"
-		
-		# Handle file exists
-		overwrite_mode = self.settings_panel.overwrite_mode.currentText()
-		if output_file.exists():
-			if overwrite_mode == "Ask":
-				reply = QMessageBox.question(
-					self, "File Exists", 
-					f"File {output_file.name} already exists. Overwrite?",
-					QMessageBox.Yes | QMessageBox.No
-				)
-				if reply != QMessageBox.Yes:
-					return ""
-			elif overwrite_mode == "Skip":
-				self.status.showMessage(f"Skipped {output_file.name} (already exists)", 3000)
-				return ""
-			elif overwrite_mode == "Rename":
-				counter = 1
-				while output_file.exists():
-					output_file = output_file.with_stem(f"{output_file.stem}_{counter}")
-					counter += 1
-		
-		return str(output_file)
 
 	def _start_worker(self, cmd: list[str]) -> None:
 		self.thread = QThread(self)
@@ -267,53 +211,35 @@ class MainWindow(QMainWindow):
 			QMessageBox.warning(self, "Flamenco", "Please configure Flamenco Base URL and API Token in settings.")
 			return
 		
-		# Get file paths from queue (using stored data)
-		items = []
-		for i in range(self.queue_panel.list_widget.count()):
-			item = self.queue_panel.list_widget.item(i)
-			file_path = item.data(0)  # Get stored file path
-			if file_path:
-				items.append(file_path)
+		# Get checked file paths from queue
+		checked_files = self.queue_panel.get_checked_files()
 		
-		if not items:
-			QMessageBox.warning(self, "Flamenco", "큐가 비어있습니다.")
+		if not checked_files:
+			QMessageBox.warning(self, "Flamenco", "No files selected.")
 			return
 		
-		# 출력 경로 설정 다이얼로그
+		# Show output dialog
 		settings = self._collect_settings()
-		input_path = items[0]
-		default_output = str(Path(input_path).with_suffix(f".{settings.output_extension()}"))
+		from .output_dialog import OutputDialog
+		dialog = OutputDialog(checked_files, settings, self)
+		if dialog.exec() != QDialog.Accepted:
+			return
 		
-		# 출력 디렉토리 선택
-		output_dir = QFileDialog.getExistingDirectory(
-			self, 
-			"Flamenco 출력 디렉토리 선택", 
-			str(Path(default_output).parent)
-		)
-		
-		if not output_dir:
-			return  # 사용자가 취소한 경우
-		
-		# 출력 파일명 설정
-		output_filename = QFileDialog.getSaveFileName(
-			self,
-			"Flamenco 출력 파일명 설정",
-			str(Path(output_dir) / Path(default_output).name),
-			f"{settings.output_extension().upper()} Files (*.{settings.output_extension()});;All Files (*)"
-		)[0]
-		
-		if not output_filename:
-			return  # 사용자가 취소한 경우
+		# Get output path for first file
+		output_path = dialog.get_output_path(checked_files[0])
+		if not output_path:
+			self.status.showMessage("Cannot generate output path", 3000)
+			return
 		
 		# FFmpeg 명령어 생성
-		cmds = build_ffmpeg_commands(input_path, output_filename, settings)
+		cmds = build_ffmpeg_commands(checked_files[0], output_path, settings)
 		command = cmds[-1]
 		
 		client = FlamencoClient(FlamencoConfig(base_url=base_url, token=token))
 		try:
-			job = client.submit_ffmpeg_job("FFmpeg Encoding Job", command, items, output_filename)
+			job = client.submit_ffmpeg_job("FFmpeg Encoding Job", command, checked_files, output_path)
 			job_id = job.get("id") or job.get("job_id") or "?"
-			self.status.showMessage(f"Submitted to Flamenco (Job {job_id}) - Output: {output_filename}", 5000)
+			self.status.showMessage(f"Submitted to Flamenco (Job {job_id}) - Output: {output_path}", 5000)
 		except Exception as e:
 			QMessageBox.critical(self, "Flamenco", f"Submission failed: {e}")
 
@@ -363,7 +289,22 @@ class MainWindow(QMainWindow):
 				settings = self._collect_settings()
 				from ..core.presets import PresetStore, Preset
 				store = PresetStore()
-				preset = Preset(name=name, **settings)
+				# Convert VideoSettings to dict for Preset creation
+				settings_dict = {
+					'container': settings.container,
+					'video_codec': settings.video_codec,
+					'crf': settings.crf,
+					'bitrate': settings.bitrate,
+					'two_pass': settings.two_pass,
+					'gpu_enable': settings.gpu_enable,
+					'low_latency': settings.low_latency,
+					'tune': settings.tune,
+					'audio_codec': settings.audio_codec,
+					'audio_bitrate': settings.audio_bitrate,
+					'max_filesize': settings.max_filesize,
+					'extra_params': settings.extra_params
+				}
+				preset = Preset(name=name, **settings_dict)
 				store.save(preset)
 				QMessageBox.information(self, "Save Success", f"Preset '{name}' saved successfully")
 			except Exception as e:

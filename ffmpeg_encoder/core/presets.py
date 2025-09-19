@@ -20,6 +20,7 @@ class Preset(BaseModel):
 	audio_bitrate: Optional[str] = "192k"
 	max_filesize: Optional[str] = None
 	additional_params: Optional[str] = Field(default=None, description="Extra ffmpeg args string")
+	extra_params: Optional[str] = Field(default=None, description="Extra ffmpeg args string")
 
 	def to_settings(self) -> Dict[str, Any]:
 		return self.model_dump()

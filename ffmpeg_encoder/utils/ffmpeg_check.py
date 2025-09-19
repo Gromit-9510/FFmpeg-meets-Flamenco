@@ -44,17 +44,19 @@ def check_ffmpeg_installation() -> Dict[str, Any]:
 	# Get codecs and formats
 	if ffmpeg_path:
 		try:
-			# Get codecs
-			proc = subprocess.run([ffmpeg_path, "-codecs"], capture_output=True, text=True, timeout=10)
+			# Get encoders
+			proc = subprocess.run([ffmpeg_path, "-encoders"], capture_output=True, text=True, timeout=10)
 			if proc.returncode == 0:
-				codecs = []
+				encoders = []
 				for line in proc.stdout.split('\n'):
-					if 'D' in line and 'E' in line:  # Decode and Encode
+					if 'V' in line or 'A' in line:  # Video or Audio
 						parts = line.split()
-						if len(parts) >= 3:
-							codec_name = parts[2]
-							codecs.append(codec_name)
-				result["codecs"] = codecs
+						if len(parts) >= 2:
+							encoder_name = parts[1]
+							# Skip if it's a description line
+							if not encoder_name.startswith('libav') and not encoder_name.startswith('libsw'):
+								encoders.append(encoder_name)
+				result["encoders"] = encoders
 			
 			# Get formats
 			proc = subprocess.run([ffmpeg_path, "-formats"], capture_output=True, text=True, timeout=10)
@@ -73,11 +75,13 @@ def check_ffmpeg_installation() -> Dict[str, Any]:
 			if proc.returncode == 0:
 				encoders = []
 				for line in proc.stdout.split('\n'):
-					if 'V' in line and 'A' in line:  # Video and Audio
+					if 'V' in line or 'A' in line:  # Video or Audio
 						parts = line.split()
 						if len(parts) >= 2:
 							encoder_name = parts[1]
-							encoders.append(encoder_name)
+							# Skip if it's a description line
+							if not encoder_name.startswith('libav') and not encoder_name.startswith('libsw'):
+								encoders.append(encoder_name)
 				result["encoders"] = encoders
 				
 				# Filter GPU encoders
@@ -101,47 +105,53 @@ def is_gpu_available() -> bool:
 	return len(get_gpu_encoders()) > 0
 
 
-def get_user_friendly_codecs() -> Dict[str, List[Dict[str, str]]]:
+def get_user_friendly_codecs(container: str = None) -> Dict[str, List[Dict[str, str]]]:
 	"""Get user-friendly codec names with descriptions."""
 	info = check_ffmpeg_installation()
 	encoders = info.get("encoders", [])
 	
+	# Container compatibility mapping
+	container_codecs = {
+		"mp4": ["libx264", "libx265", "h264_nvenc", "hevc_nvenc", "libx264_ll", "libx265_ll", "h264_nvenc_ll", "hevc_nvenc_ll"],
+		"avi": ["libx264", "libx265", "h264_nvenc", "hevc_nvenc", "libx264_ll", "libx265_ll", "h264_nvenc_ll", "hevc_nvenc_ll", "dnxhd"],
+		"mov": ["libx264", "libx265", "h264_nvenc", "hevc_nvenc", "libx264_ll", "libx265_ll", "h264_nvenc_ll", "hevc_nvenc_ll", "prores_ks"],
+		"mkv": ["libx264", "libx265", "h264_nvenc", "hevc_nvenc", "libx264_ll", "libx265_ll", "h264_nvenc_ll", "hevc_nvenc_ll", "libvpx-vp9", "libaom-av1"],
+		"webm": ["libvpx-vp9", "libaom-av1"],
+		"flv": ["libx264", "h264_nvenc", "libx264_ll", "h264_nvenc_ll"],
+		"wmv": ["libx264", "h264_nvenc", "libx264_ll", "h264_nvenc_ll"],
+		"m4v": ["libx264", "libx265", "h264_nvenc", "hevc_nvenc", "libx264_ll", "libx265_ll", "h264_nvenc_ll", "hevc_nvenc_ll"]
+	}
+	
 	# User-friendly codec definitions
 	codec_definitions = {
 		"video": [
-			# H.264 일반
-			{"id": "libx264", "name": "H.264 CPU", "description": "고품질 H.264 인코딩 (CPU)", "gpu": False},
-			{"id": "h264_nvenc", "name": "H.264 GPU", "description": "NVIDIA GPU 가속 H.264", "gpu": True},
+			# H.264 Group
+			{"id": "libx264", "name": "libx264 (CPU)", "description": "", "gpu": False},
+			{"id": "libx264_ll", "name": "libx264 (CPU) Low Latency", "description": "low latency", "gpu": False},
+			{"id": "h264_nvenc", "name": "H.264 (GPU)", "description": "", "gpu": True},
+			{"id": "h264_nvenc_ll", "name": "H.264 (GPU) Low Latency", "description": "low latency", "gpu": True},
 			{"id": "separator1", "name": "─────────────────────────", "description": "", "gpu": False, "separator": True},
 			
-			# H.265 일반
-			{"id": "libx265", "name": "H.265 CPU", "description": "고품질 H.265 인코딩 (CPU)", "gpu": False},
-			{"id": "hevc_nvenc", "name": "H.265 GPU", "description": "NVIDIA GPU 가속 H.265", "gpu": True},
+			# H.265 Group
+			{"id": "libx265", "name": "libx265 (CPU)", "description": "", "gpu": False},
+			{"id": "libx265_ll", "name": "libx265 (CPU) Low Latency", "description": "low latency", "gpu": False},
+			{"id": "hevc_nvenc", "name": "H.265 (GPU)", "description": "", "gpu": True},
+			{"id": "hevc_nvenc_ll", "name": "H.265 (GPU) Low Latency", "description": "low latency", "gpu": True},
 			{"id": "separator2", "name": "─────────────────────────", "description": "", "gpu": False, "separator": True},
 			
-			# H.264 저지연
-			{"id": "libx264_ll", "name": "저지연 H.264 CPU", "description": "H.264 저지연 인코딩 (zerolatency 옵션)", "gpu": False},
-			{"id": "h264_nvenc_ll", "name": "저지연 H.264 GPU", "description": "NVIDIA GPU 가속 H.264 저지연", "gpu": True},
-			{"id": "separator3", "name": "─────────────────────────", "description": "", "gpu": False, "separator": True},
-			
-			# H.265 저지연
-			{"id": "libx265_ll", "name": "저지연 H.265 CPU", "description": "H.265 저지연 인코딩 (zerolatency 옵션)", "gpu": False},
-			{"id": "hevc_nvenc_ll", "name": "저지연 H.265 GPU", "description": "NVIDIA GPU 가속 H.265 저지연", "gpu": True},
-			{"id": "separator4", "name": "─────────────────────────", "description": "", "gpu": False, "separator": True},
-			
-			# 기타 코덱들
-			{"id": "libvpx-vp9", "name": "VP9", "description": "Google VP9 코덱 (CPU)", "gpu": False},
-			{"id": "libaom-av1", "name": "AV1", "description": "최신 AV1 코덱 (CPU)", "gpu": False},
-			{"id": "prores_ks", "name": "ProRes", "description": "Apple ProRes (고품질)", "gpu": False},
-			{"id": "dnxhd", "name": "DNxHD", "description": "Avid DNxHD (방송용)", "gpu": False},
+			# Other Codecs
+			{"id": "libvpx-vp9", "name": "libvpx-vp9 (CPU)", "description": "", "gpu": False},
+			{"id": "libaom-av1", "name": "libaom-av1 (CPU)", "description": "", "gpu": False},
+			{"id": "prores_ks", "name": "prores_ks (CPU)", "description": "", "gpu": False},
+			{"id": "dnxhd", "name": "dnxhd (CPU)", "description": "", "gpu": False},
 		],
 		"audio": [
-			{"id": "aac", "name": "AAC", "description": "고품질 오디오 (권장)", "gpu": False},
-			{"id": "libmp3lame", "name": "MP3", "description": "MP3 오디오", "gpu": False},
-			{"id": "libopus", "name": "Opus", "description": "고품질 저지연 오디오", "gpu": False},
-			{"id": "libvorbis", "name": "Vorbis", "description": "오픈소스 오디오", "gpu": False},
+			{"id": "aac", "name": "AAC", "description": "High quality audio (recommended)", "gpu": False},
+			{"id": "libmp3lame", "name": "MP3", "description": "MP3 audio", "gpu": False},
+			{"id": "libopus", "name": "Opus", "description": "High quality low latency audio", "gpu": False},
+			{"id": "libvorbis", "name": "Vorbis", "description": "Open source audio", "gpu": False},
 			{"id": "ac3", "name": "AC-3", "description": "Dolby Digital", "gpu": False},
-			{"id": "flac", "name": "FLAC", "description": "무손실 압축", "gpu": False},
+			{"id": "flac", "name": "FLAC", "description": "Lossless compression", "gpu": False},
 		]
 	}
 	
@@ -157,8 +167,16 @@ def get_user_friendly_codecs() -> Dict[str, List[Dict[str, str]]]:
 			elif codec["id"].endswith("_ll"):
 				base_codec_id = codec["id"].replace("_ll", "")
 				if base_codec_id in encoders:
+					# Check container compatibility for video codecs
+					if category == "video" and container and container in container_codecs:
+						if codec["id"] not in container_codecs[container]:
+							continue
 					available[category].append(codec)
 			elif codec["id"] in encoders:
+				# Check container compatibility for video codecs
+				if category == "video" and container and container in container_codecs:
+					if codec["id"] not in container_codecs[container]:
+						continue
 				available[category].append(codec)
 	
 	return available
