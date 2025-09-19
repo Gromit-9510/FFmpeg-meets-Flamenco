@@ -2,7 +2,7 @@
 
 **Author:** Insoo Chang (insu9510@gmail.com)  
 **GitHub:** https://github.com/insu9510/ffmpeg-encoder  
-**License:** MIT License (Non-commercial use only)
+**License:** LGPL 3.0+ (Non-commercial use only)
 
 A powerful Windows desktop FFmpeg encoding tool with queue management, presets, logging, and Flamenco distributed processing integration.
 
@@ -106,7 +106,7 @@ This application integrates with [Flamenco](https://flamenco.blender.org/) for d
 
 ## License
 
-This project is licensed under the MIT License with commercial use restrictions. See [LICENSE](LICENSE) for details.
+This project is licensed under the GNU Lesser General Public License v3.0 or later with commercial use restrictions. See [LICENSE](LICENSE) for details.
 
 **Commercial Use**: This software is free for non-commercial use. Commercial use requires explicit permission from the author. Contact: insu9510@gmail.com
 

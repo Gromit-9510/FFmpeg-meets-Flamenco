@@ -412,7 +412,7 @@ class MainWindow(QMainWindow):
 
 <p><b>GitHub:</b> <a href="https://github.com/insu9510/ffmpeg-encoder">https://github.com/insu9510/ffmpeg-encoder</a></p>
 
-<p><b>License:</b> MIT License<br>
+<p><b>License:</b> LGPL 3.0+<br>
 This software is free to use, modify, and distribute for non-commercial purposes.<br>
 Commercial use requires permission from the author.</p>
 		"""
