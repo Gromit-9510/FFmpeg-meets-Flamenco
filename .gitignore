@@ -129,6 +129,9 @@ dist/
 *.msi
 *.dmg
 
+# Keep build.spec for PyInstaller configuration
+!build.spec
+
 # Test files
 test_*.py
 demo_*.py
