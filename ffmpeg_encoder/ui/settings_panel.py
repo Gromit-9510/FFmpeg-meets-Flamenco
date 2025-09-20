@@ -325,7 +325,7 @@ class SettingsPanel(QWidget):
 		<p>• 출력 설정 다이얼로그에서 폴더, 파일명 패턴 설정</p>
 		
 		<h3>5. 큐 관리</h3>
-		<p>• <b>Remove Selected:</b> 선택된 항목 삭제</p>
+		<p>• <b>Remove Checked:</b> 체크된 항목 삭제</p>
 		<p>• <b>Batch Rename:</b> 체크된 파일 일괄 이름변경</p>
 		<p>• <b>Select All/Deselect All:</b> 전체 선택/해제</p>
 		

@@ -40,7 +40,7 @@ class QueuePanel(QWidget):
 		controls = QHBoxLayout()
 		self.add_files_btn = QPushButton("Add Files")
 		self.add_folder_btn = QPushButton("Add Folder")
-		self.remove_btn = QPushButton("Remove Selected")
+		self.remove_btn = QPushButton("Remove Checked")
 		self.rename_btn = QPushButton("Batch Rename")
 		self.select_all_btn = QPushButton("Check All")
 		self.deselect_all_btn = QPushButton("Uncheck All")
@@ -184,10 +184,30 @@ class QueuePanel(QWidget):
 		else:
 			QMessageBox.information(self, "No Videos", f"No video files found in {folder.name}")
 
+	def _find_item_by_path(self, item: QTreeWidgetItem, target_path: str) -> bool:
+		"""Find tree item by file path recursively."""
+		item_path = item.data(0, Qt.UserRole)
+		if item_path == target_path:
+			return True
+		
+		for i in range(item.childCount()):
+			if self._find_item_by_path(item.child(i), target_path):
+				return True
+		return False
+
 	def _on_remove(self) -> None:
-		"""Remove selected items from tree."""
-		selected_items = self.tree_widget.selectedItems()
-		for item in selected_items:
+		"""Remove checked items from tree."""
+		checked_items = []
+		for file_path, file_item in self.file_items.items():
+			if file_item.checked:
+				# Find the tree item for this file
+				for i in range(self.tree_widget.topLevelItemCount()):
+					item = self.tree_widget.topLevelItem(i)
+					if self._find_item_by_path(item, file_path):
+						checked_items.append(item)
+						break
+		
+		for item in checked_items:
 			file_path = item.data(0, Qt.UserRole)
 			if file_path and not file_path.startswith("folder:"):
 				# Remove from file_items
@@ -304,7 +324,7 @@ class QueuePanel(QWidget):
 	def _on_rename(self) -> None:
 		checked_files = self.get_checked_files()
 		if not checked_files:
-			QMessageBox.information(self, "No Selection", "No files selected. Please select files to rename.")
+			QMessageBox.information(self, "No Selection", "No files checked. Please check files to rename.")
 			return
 		
 		from .rename_dialog import RenameDialog

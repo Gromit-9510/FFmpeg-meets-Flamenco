@@ -123,7 +123,8 @@ class MainWindow(QMainWindow):
 		s.crf = int(self.settings_panel.crf.value())
 		bitrate = self.settings_panel.bitrate.text().strip()
 		s.bitrate = bitrate or None
-		s.two_pass = self.settings_panel.two_pass.isChecked()
+		# Two-pass UI has been removed; force single-pass
+		s.two_pass = False
 		
 		# GPU enable is determined by codec selection
 		s.gpu_enable = "nvenc" in s.video_codec
@@ -154,7 +155,7 @@ class MainWindow(QMainWindow):
 		
 		self.settings_panel.crf.setValue(int(s.crf or 18))
 		self.settings_panel.bitrate.setText(s.bitrate or "")
-		self.settings_panel.two_pass.setChecked(bool(s.two_pass))
+		# Two-pass UI removed; nothing to set here
 		
 		self.settings_panel.audio_codec.setCurrentText(s.audio_codec)
 		self.settings_panel.audio_bitrate.setText(s.audio_bitrate or "")
@@ -166,7 +167,7 @@ class MainWindow(QMainWindow):
 		checked_files = self.queue_panel.get_checked_files()
 		
 		if not checked_files:
-			self.status.showMessage("No files selected", 3000)
+			self.status.showMessage("No files checked", 3000)
 			return
 
 		settings = self._collect_settings()
@@ -213,33 +214,45 @@ class MainWindow(QMainWindow):
 		
 		# Get checked file paths from queue
 		checked_files = self.queue_panel.get_checked_files()
-		
 		if not checked_files:
-			QMessageBox.warning(self, "Flamenco", "No files selected.")
+			QMessageBox.warning(self, "Flamenco", "No files checked.")
 			return
 		
-		# Show output dialog
+		# Output path 설정 (원래 버전처럼 직접 파일 다이얼로그 사용)
 		settings = self._collect_settings()
-		from .output_dialog import OutputDialog
-		dialog = OutputDialog(checked_files, settings, self)
-		if dialog.exec() != QDialog.Accepted:
-			return
+		input_path = checked_files[0]
+		default_output = str(Path(input_path).with_suffix(f".{settings.output_extension()}"))
 		
-		# Get output path for first file
-		output_path = dialog.get_output_path(checked_files[0])
-		if not output_path:
-			self.status.showMessage("Cannot generate output path", 3000)
-			return
+		# Output directory 선택
+		output_dir = QFileDialog.getExistingDirectory(
+			self, 
+			"Flamenco Output Directory", 
+			str(Path(default_output).parent)
+		)
+		
+		if not output_dir:
+			return  # 사용자가 취소한 경우
+		
+		# Output filename 설정
+		output_filename = QFileDialog.getSaveFileName(
+			self,
+			"Flamenco Output Filename",
+			str(Path(output_dir) / Path(default_output).name),
+			f"{settings.output_extension().upper()} Files (*.{settings.output_extension()});;All Files (*)"
+		)[0]
+		
+		if not output_filename:
+			return  # 사용자가 취소한 경우
 		
 		# FFmpeg 명령어 생성
-		cmds = build_ffmpeg_commands(checked_files[0], output_path, settings)
+		cmds = build_ffmpeg_commands(input_path, output_filename, settings)
 		command = cmds[-1]
 		
 		client = FlamencoClient(FlamencoConfig(base_url=base_url, token=token))
 		try:
-			job = client.submit_ffmpeg_job("FFmpeg Encoding Job", command, checked_files, output_path)
+			job = client.submit_ffmpeg_job("FFmpeg Encoding Job", command, checked_files, output_filename)
 			job_id = job.get("id") or job.get("job_id") or "?"
-			self.status.showMessage(f"Submitted to Flamenco (Job {job_id}) - Output: {output_path}", 5000)
+			self.status.showMessage(f"Submitted to Flamenco (Job {job_id}) - Output: {output_filename}", 5000)
 		except Exception as e:
 			QMessageBox.critical(self, "Flamenco", f"Submission failed: {e}")
 

@@ -512,7 +512,7 @@ class FlamencoClient:
 							"command": command_str,
 							"working_directory": working_dir,
 							"input_files": files,
-							"output_file": str(Path(files[0]).with_suffix('.mp4')) if files else "output.mp4",
+							"output_file": output_path or (str(Path(files[0]).with_suffix('.mp4')) if files else "output.mp4"),
 						},
 						"submitter_platform": platform,
 						"metadata": {
@@ -547,7 +547,6 @@ class FlamencoClient:
 				
 			except Exception as e:
 				last_error = e
-				print(f"Job type '{job_type}' failed: {e}")
 				continue
 		
 		# 모든 작업 타입이 실패한 경우 마지막 에러를 발생
