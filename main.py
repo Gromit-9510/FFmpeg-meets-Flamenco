@@ -12,11 +12,18 @@ from pathlib import Path
 if getattr(sys, 'frozen', False):
     # Running as compiled executable
     import subprocess
+    import atexit
     
     # Open devnull file and keep it open
     devnull = open(os.devnull, 'w')
     sys.stdout = devnull
     sys.stderr = devnull
+    
+    # Register cleanup function to close devnull
+    def cleanup_devnull():
+        if not devnull.closed:
+            devnull.close()
+    atexit.register(cleanup_devnull)
         
     # Also suppress subprocess output
     original_run = subprocess.run

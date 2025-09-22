@@ -21,11 +21,10 @@ A powerful Windows desktop FFmpeg encoding tool with queue management, presets, 
 - Add single files, folders, or multiple files
 - Real-time progress monitoring
 - Remove items from queue
-- Batch processing support
+- Multi-encoding: one file with multiple configurations
 
 ### ⚙️ Advanced Features
 - **Preset System**: Save/load encoding presets
-- **Batch Renaming**: Pattern-based and Excel mapping
 - **Flamenco Integration**: Distributed encoding across multiple machines
 - **Live Logging**: Real-time FFmpeg command preview and progress
 - **Auto-save Settings**: Flamenco configuration persistence

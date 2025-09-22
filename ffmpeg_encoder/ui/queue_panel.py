@@ -41,14 +41,12 @@ class QueuePanel(QWidget):
 		self.add_files_btn = QPushButton("Add Files")
 		self.add_folder_btn = QPushButton("Add Folder")
 		self.remove_btn = QPushButton("Remove Checked")
-		self.rename_btn = QPushButton("Batch Rename")
 		self.select_all_btn = QPushButton("Check All")
 		self.deselect_all_btn = QPushButton("Uncheck All")
 		
 		controls.addWidget(self.add_files_btn)
 		controls.addWidget(self.add_folder_btn)
 		controls.addWidget(self.remove_btn)
-		controls.addWidget(self.rename_btn)
 		controls.addWidget(self.select_all_btn)
 		controls.addWidget(self.deselect_all_btn)
 		controls.addStretch(1)
@@ -100,7 +98,6 @@ class QueuePanel(QWidget):
 		self.add_files_btn.clicked.connect(self._on_add_files)
 		self.add_folder_btn.clicked.connect(self._on_add_folder)
 		self.remove_btn.clicked.connect(self._on_remove)
-		self.rename_btn.clicked.connect(self._on_rename)
 		self.select_all_btn.clicked.connect(self._on_select_all)
 		self.deselect_all_btn.clicked.connect(self._on_deselect_all)
 		self.tree_widget.itemChanged.connect(self._on_item_changed)
@@ -321,49 +318,7 @@ class QueuePanel(QWidget):
 				
 				self.selection_changed.emit(self.get_checked_files())
 
-	def _on_rename(self) -> None:
-		checked_files = self.get_checked_files()
-		if not checked_files:
-			QMessageBox.information(self, "No Selection", "No files checked. Please check files to rename.")
-			return
-		
-		from .rename_dialog import RenameDialog
-		dialog = RenameDialog(checked_files, self)
-		if dialog.exec() == QDialog.Accepted:
-			# Update file paths in the tree
-			for old_path, new_path in dialog.rename_operations:
-				if old_path != new_path:
-					# Update file_items
-					if old_path in self.file_items:
-						file_item = self.file_items[old_path]
-						file_item.path = new_path
-						file_item.display_name = Path(new_path).name
-						self.file_items[new_path] = file_item
-						del self.file_items[old_path]
-					
-					# Update tree display
-					self._update_item_path(old_path, new_path)
 
-	def _update_item_path(self, old_path: str, new_path: str) -> None:
-		"""Update item path in tree widget."""
-		for i in range(self.tree_widget.topLevelItemCount()):
-			item = self.tree_widget.topLevelItem(i)
-			if self._update_item_path_recursive(item, old_path, new_path):
-				break
-
-	def _update_item_path_recursive(self, item: QTreeWidgetItem, old_path: str, new_path: str) -> bool:
-		"""Recursively update item path."""
-		file_path = item.data(0, Qt.UserRole)
-		if file_path == old_path:
-			item.setText(0, Path(new_path).name)
-			item.setText(1, str(Path(new_path).parent))
-			item.setData(0, Qt.UserRole, new_path)
-			return True
-		
-		for i in range(item.childCount()):
-			if self._update_item_path_recursive(item.child(i), old_path, new_path):
-				return True
-		return False
 
 	def get_checked_files(self) -> List[str]:
 		"""Get list of checked file paths."""

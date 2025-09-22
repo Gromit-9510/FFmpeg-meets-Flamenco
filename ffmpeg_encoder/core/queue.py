@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import List
+from typing import List, Optional
 
 
 class JobStatus(Enum):
@@ -16,10 +16,10 @@ class JobStatus(Enum):
 @dataclass
 class QueueItem:
 	source_path: str
-	output_path: str | None = None
+	output_path: Optional[str] = None
 	status: JobStatus = JobStatus.PENDING
 	progress: float = 0.0
-	message: str | None = None
+	message: Optional[str] = None
 
 
 class JobQueue:

@@ -20,84 +20,200 @@ def check_ffmpeg_installation() -> Dict[str, Any]:
 		"gpu_encoders": [],
 	}
 	
-	# Check FFmpeg
-	ffmpeg_path = which_ffmpeg()
-	if ffmpeg_path:
-		result["ffmpeg_available"] = True
-		result["ffmpeg_path"] = ffmpeg_path
+	try:
+		# Check FFmpeg
+		ffmpeg_path = which_ffmpeg()
+		if ffmpeg_path:
+			result["ffmpeg_available"] = True
+			result["ffmpeg_path"] = ffmpeg_path
+			
+			# Get version
+			try:
+				proc = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, timeout=10)
+				if proc.returncode == 0:
+					version_line = proc.stdout.split('\n')[0]
+					result["version"] = version_line
+			except Exception:
+				pass
 		
-		# Get version
-		try:
-			proc = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, timeout=10)
-			if proc.returncode == 0:
-				version_line = proc.stdout.split('\n')[0]
-				result["version"] = version_line
-		except Exception:
-			pass
-	
-	# Check FFprobe
-	ffprobe_path = which_ffprobe()
-	if ffprobe_path:
-		result["ffprobe_available"] = True
-		result["ffprobe_path"] = ffprobe_path
-	
-	# Get codecs and formats
-	if ffmpeg_path:
-		try:
-			# Get encoders
-			proc = subprocess.run([ffmpeg_path, "-encoders"], capture_output=True, text=True, timeout=10)
-			if proc.returncode == 0:
-				encoders = []
-				for line in proc.stdout.split('\n'):
-					if 'V' in line or 'A' in line:  # Video or Audio
-						parts = line.split()
-						if len(parts) >= 2:
-							encoder_name = parts[1]
-							# Skip if it's a description line
-							if not encoder_name.startswith('libav') and not encoder_name.startswith('libsw'):
-								encoders.append(encoder_name)
-				result["encoders"] = encoders
-			
-			# Get formats
-			proc = subprocess.run([ffmpeg_path, "-formats"], capture_output=True, text=True, timeout=10)
-			if proc.returncode == 0:
-				formats = []
-				for line in proc.stdout.split('\n'):
-					if 'D' in line and 'E' in line:  # Demux and Mux
-						parts = line.split()
-						if len(parts) >= 2:
-							format_name = parts[1]
-							formats.append(format_name)
-				result["formats"] = formats
-			
-			# Get encoders
-			proc = subprocess.run([ffmpeg_path, "-encoders"], capture_output=True, text=True, timeout=10)
-			if proc.returncode == 0:
-				encoders = []
-				for line in proc.stdout.split('\n'):
-					if 'V' in line or 'A' in line:  # Video or Audio
-						parts = line.split()
-						if len(parts) >= 2:
-							encoder_name = parts[1]
-							# Skip if it's a description line
-							if not encoder_name.startswith('libav') and not encoder_name.startswith('libsw'):
-								encoders.append(encoder_name)
-				result["encoders"] = encoders
+		# Check FFprobe
+		ffprobe_path = which_ffprobe()
+		if ffprobe_path:
+			result["ffprobe_available"] = True
+			result["ffprobe_path"] = ffprobe_path
+		
+		# Get codecs and formats
+		if ffmpeg_path:
+			try:
+				# Get encoders
+				proc = subprocess.run([ffmpeg_path, "-encoders"], capture_output=True, text=True, timeout=10)
+				if proc.returncode == 0:
+					encoders = []
+					for line in proc.stdout.split('\n'):
+						if 'V' in line or 'A' in line:  # Video or Audio
+							parts = line.split()
+							if len(parts) >= 2:
+								encoder_name = parts[1]
+								# Skip if it's a description line
+								if not encoder_name.startswith('libav') and not encoder_name.startswith('libsw'):
+									encoders.append(encoder_name)
+					result["encoders"] = encoders
 				
-				# Filter GPU encoders
-				gpu_encoders = [enc for enc in encoders if any(gpu in enc.lower() for gpu in ['nvenc', 'qsv', 'amf', 'vaapi', 'videotoolbox'])]
-				result["gpu_encoders"] = gpu_encoders
+				# Get formats
+				proc = subprocess.run([ffmpeg_path, "-formats"], capture_output=True, text=True, timeout=10)
+				if proc.returncode == 0:
+					formats = []
+					for line in proc.stdout.split('\n'):
+						if 'D' in line and 'E' in line:  # Demux and Mux
+							parts = line.split()
+							if len(parts) >= 2:
+								format_name = parts[1]
+								formats.append(format_name)
+					result["formats"] = formats
 				
-		except Exception:
-			pass
+				# Get encoders
+				proc = subprocess.run([ffmpeg_path, "-encoders"], capture_output=True, text=True, timeout=10)
+				if proc.returncode == 0:
+					encoders = []
+					for line in proc.stdout.split('\n'):
+						if 'V' in line or 'A' in line:  # Video or Audio
+							parts = line.split()
+							if len(parts) >= 2:
+								encoder_name = parts[1]
+								# Skip if it's a description line
+								if not encoder_name.startswith('libav') and not encoder_name.startswith('libsw'):
+									encoders.append(encoder_name)
+					result["encoders"] = encoders
+					
+					# Filter GPU encoders
+					gpu_encoders = [enc for enc in encoders if any(gpu in enc.lower() for gpu in ['nvenc', 'qsv', 'amf', 'vaapi', 'videotoolbox'])]
+					result["gpu_encoders"] = gpu_encoders
+					
+			except Exception:
+				pass
+	
+	except Exception as e:
+		print(f"Error checking FFmpeg installation: {e}")
+		# Return the result with default values
 	
 	return result
 
 
 def get_gpu_encoders() -> List[str]:
 	"""Get list of available GPU encoders."""
-	info = check_ffmpeg_installation()
-	return info.get("gpu_encoders", [])
+	try:
+		info = check_ffmpeg_installation()
+		return info.get("gpu_encoders", [])
+	except Exception:
+		# Fallback: return common GPU encoders if detection fails
+		return ["h264_nvenc", "hevc_nvenc", "h264_qsv", "hevc_qsv", "h264_amf", "hevc_amf"]
+
+
+def test_gpu_encoder_compatibility(encoder: str) -> bool:
+	"""Test if a GPU encoder is actually compatible with current drivers."""
+	ffmpeg_path = which_ffmpeg()
+	if not ffmpeg_path:
+		return False
+	
+	try:
+		# Create a simple test command to check encoder compatibility
+		# Use a minimal test that should work if the encoder is available
+		test_cmd = [
+			ffmpeg_path, "-f", "lavfi", "-i", "testsrc=duration=1:size=320x240:rate=1",
+			"-c:v", encoder, "-t", "0.1", "-f", "null", "-"
+		]
+		
+		proc = subprocess.run(
+			test_cmd, 
+			capture_output=True, 
+			text=True, 
+			timeout=10,
+			encoding='utf-8',
+			errors='replace'
+		)
+		
+		# Check for specific NVENC compatibility issues
+		error_output = proc.stderr.lower()
+		if any(msg in error_output for msg in [
+			"driver does not support",
+			"required nvidia driver",
+			"encoder not found",
+			"no such encoder",
+			"required nvenc api version",
+			"minimum required nvidia driver",
+			"error while opening encoder"
+		]):
+			return False
+		
+		# If it succeeds or fails with a non-encoder related error, consider it compatible
+		return True
+		
+	except Exception:
+		return False
+
+
+def check_nvenc_driver_version() -> bool:
+	"""Check if NVENC driver version is compatible."""
+	ffmpeg_path = which_ffmpeg()
+	if not ffmpeg_path:
+		return False
+	
+	try:
+		# Test with a very simple NVENC command
+		test_cmd = [
+			ffmpeg_path, "-f", "lavfi", "-i", "testsrc=duration=0.1:size=64x64:rate=1",
+			"-c:v", "h264_nvenc", "-t", "0.05", "-f", "null", "-"
+		]
+		
+		proc = subprocess.run(
+			test_cmd, 
+			capture_output=True, 
+			text=True, 
+			timeout=5,
+			encoding='utf-8',
+			errors='replace'
+		)
+		
+		# Check for driver version issues
+		error_output = proc.stderr.lower()
+		if any(msg in error_output for msg in [
+			"driver does not support",
+			"required nvidia driver",
+			"required nvenc api version",
+			"minimum required nvidia driver",
+			"error while opening encoder"
+		]):
+			return False
+		
+		return True
+		
+	except Exception:
+		return False
+
+
+def get_compatible_gpu_encoders() -> List[str]:
+	"""Get list of GPU encoders that are actually compatible with current system."""
+	all_gpu_encoders = get_gpu_encoders()
+	compatible_encoders = []
+	
+	# Special check for NVENC
+	nvenc_compatible = check_nvenc_driver_version()
+	
+	for encoder in all_gpu_encoders:
+		# Skip NVENC encoders if driver is incompatible
+		if "nvenc" in encoder and not nvenc_compatible:
+			continue
+		
+		# Test other GPU encoders
+		if "nvenc" not in encoder:
+			if test_gpu_encoder_compatibility(encoder):
+				compatible_encoders.append(encoder)
+		else:
+			# NVENC encoders - only add if driver is compatible
+			if nvenc_compatible:
+				compatible_encoders.append(encoder)
+	
+	return compatible_encoders
 
 
 def is_gpu_available() -> bool:

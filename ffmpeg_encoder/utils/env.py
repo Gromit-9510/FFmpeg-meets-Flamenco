@@ -4,6 +4,7 @@ import os
 import shutil
 import platform
 from pathlib import Path
+from typing import Union, Optional
 
 
 class FFmpegNotFoundError(RuntimeError):
@@ -21,14 +22,14 @@ def get_submitter_platform() -> str:
 	return platform.system()
 
 
-def which_ffmpeg() -> str | None:
+def which_ffmpeg() -> Optional[str]:
 	custom = os.environ.get("FFMPEG_BINARY")
 	if custom and Path(custom).exists():
 		return custom
 	return shutil.which("ffmpeg")
 
 
-def which_ffprobe() -> str | None:
+def which_ffprobe() -> Optional[str]:
 	custom = os.environ.get("FFPROBE_BINARY")
 	if custom and Path(custom).exists():
 		return custom

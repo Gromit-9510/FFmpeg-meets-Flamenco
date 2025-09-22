@@ -26,7 +26,7 @@ class FlamencoAutoConfig:
 	error_message: str = ""
 
 def setup_flamenco_for_ffmpeg(flamenco_path: str) -> FlamencoAutoConfig:
-	"""Flamenco를 FFmpeg Encoder와 호환되도록 설정합니다."""
+	"""Flamenco를 FFmpeg Encoder와 호환되도록 설정합니다. (V3: 기존 Manager 설정 보존)"""
 	try:
 		# 기본 설정 로드
 		config = load_flamenco_config(flamenco_path)
@@ -36,31 +36,26 @@ def setup_flamenco_for_ffmpeg(flamenco_path: str) -> FlamencoAutoConfig:
 		# Flamenco 경로 설정
 		flamenco_dir = Path(flamenco_path)
 		
-		# 호환성 확인 및 설정
-		compatibility_status = _check_flamenco_compatibility(flamenco_dir)
+		# 호환성 확인 (기존 설정은 수정하지 않음)
+		compatibility_status = _check_flamenco_compatibility_v3(flamenco_dir)
 		
-		# 1. Manager 설정 수정
-		manager_config_path = flamenco_dir / "flamenco-manager.yaml"
-		if manager_config_path.exists():
-			_setup_manager_config(manager_config_path)
+		# 1. FFmpeg 전용 Worker 설정만 생성 (Manager 설정은 건드리지 않음)
+		worker_config_path = flamenco_dir / "ffmpeg-worker.yaml"
+		_setup_ffmpeg_worker_config(worker_config_path)
 		
-		# 2. Worker 설정 생성
-		worker_config_path = flamenco_dir / "flamenco-worker.yaml"
-		_setup_worker_config(worker_config_path)
-		
-		# 3. Custom job type 스크립트 생성
+		# 2. Custom job type 스크립트 생성
 		scripts_dir = flamenco_dir / "scripts"
 		scripts_dir.mkdir(exist_ok=True)
 		_setup_ffmpeg_job_type(scripts_dir)
 		
-		# 4. Flamenco 폴더 구조 생성
-		_setup_flamenco_structure(flamenco_dir)
+		# 3. FFmpeg 전용 폴더 구조 생성
+		_setup_ffmpeg_structure(flamenco_dir)
 		
-		# 5. 호환성 테스트
+		# 4. 호환성 테스트
 		test_result = _test_flamenco_connection(config)
 		
 		config.success = True
-		config.error_message = f"FFmpeg Encoder 호환 설정이 완료되었습니다.\n{compatibility_status}\n{test_result}"
+		config.error_message = f"FFmpeg Encoder V3 호환 설정이 완료되었습니다.\n{compatibility_status}\n{test_result}"
 		return config
 		
 	except Exception as e:
@@ -70,7 +65,7 @@ def setup_flamenco_for_ffmpeg(flamenco_path: str) -> FlamencoAutoConfig:
 			manager_name="",
 			listen_port=8080,
 			success=False,
-			error_message=f"Flamenco 설정 오류: {str(e)}"
+			error_message=f"Flamenco V3 설정 오류: {str(e)}"
 		)
 
 def _check_flamenco_compatibility(flamenco_dir: Path) -> str:
@@ -124,6 +119,50 @@ def _check_flamenco_compatibility(flamenco_dir: Path) -> str:
 	
 	return "\n".join(status_messages)
 
+def _check_flamenco_compatibility_v3(flamenco_dir: Path) -> str:
+	"""Flamenco V3 설정의 호환성을 확인합니다. (기존 Manager 설정은 건드리지 않음)"""
+	status_messages = []
+	
+	# Manager 설정 확인 (읽기만 하고 수정하지 않음)
+	manager_config_path = flamenco_dir / "flamenco-manager.yaml"
+	if manager_config_path.exists():
+		try:
+			with open(manager_config_path, 'r', encoding='utf-8') as f:
+				config = yaml.safe_load(f)
+			
+			# Manager가 실행 중인지 확인
+			status_messages.append("✅ Manager 설정 파일이 존재합니다.")
+			
+			# FFmpeg 변수 확인 (수정하지 않음)
+			if 'variables' in config and 'ffmpeg' in config['variables']:
+				status_messages.append("✅ Manager에 FFmpeg 변수가 이미 설정되어 있습니다.")
+			else:
+				status_messages.append("ℹ️ Manager에 FFmpeg 변수가 없습니다. (V3에서는 별도 Worker 사용)")
+		except Exception as e:
+			status_messages.append(f"❌ Manager 설정 읽기 오류: {e}")
+	else:
+		status_messages.append("⚠️ Manager 설정 파일이 없습니다.")
+	
+	# FFmpeg 전용 Worker 설정 확인
+	ffmpeg_worker_config_path = flamenco_dir / "ffmpeg-worker.yaml"
+	if ffmpeg_worker_config_path.exists():
+		status_messages.append("✅ FFmpeg 전용 Worker 설정이 존재합니다.")
+	else:
+		status_messages.append("ℹ️ FFmpeg 전용 Worker 설정이 없습니다. 생성합니다.")
+	
+	# Scripts 디렉토리 확인
+	scripts_dir = flamenco_dir / "scripts"
+	if scripts_dir.exists():
+		ffmpeg_compiler = scripts_dir / "ffmpeg-encode.js"
+		if ffmpeg_compiler.exists():
+			status_messages.append("✅ FFmpeg 작업 컴파일러가 있습니다.")
+		else:
+			status_messages.append("ℹ️ FFmpeg 작업 컴파일러가 없습니다. 생성합니다.")
+	else:
+		status_messages.append("ℹ️ Scripts 디렉토리가 없습니다. 생성합니다.")
+	
+	return "\n".join(status_messages)
+
 def _test_flamenco_connection(config: FlamencoAutoConfig) -> str:
 	"""Flamenco 연결을 테스트합니다."""
 	try:
@@ -144,8 +183,71 @@ def _test_flamenco_connection(config: FlamencoAutoConfig) -> str:
 	except Exception as e:
 		return f"❌ Flamenco 연결 실패: {e}"
 
+def _setup_ffmpeg_worker_config(worker_config_path: Path) -> None:
+	"""FFmpeg 전용 Worker 설정 파일을 생성합니다. (V3: 기존 Manager 설정은 건드리지 않음)"""
+	try:
+		# FFmpeg 전용 Worker 설정 생성
+		ffmpeg_worker_config = {
+			'manager_url': 'http://localhost:8080',
+			'worker_name': 'ffmpeg-encoder-worker',
+			'worker_tags': ['ffmpeg', 'video', 'encoding'],
+			'variables': {
+				'ffmpeg': {
+					'values': [
+						{'platform': 'windows', 'value': 'ffmpeg'},
+						{'platform': 'linux', 'value': 'ffmpeg'},
+						{'platform': 'darwin', 'value': 'ffmpeg'}
+					]
+				}
+			},
+			'job_types': ['ffmpeg-encode'],
+			'capabilities': {
+				'ffmpeg': True,
+				'video_encoding': True,
+				'gpu_encoding': True
+			}
+		}
+		
+		# 기존 파일이 있으면 백업
+		if worker_config_path.exists():
+			backup_path = worker_config_path.with_suffix('.yaml.backup')
+			if not backup_path.exists():
+				with open(backup_path, 'w', encoding='utf-8') as f:
+					yaml.dump(ffmpeg_worker_config, f, default_flow_style=False, allow_unicode=True)
+		
+		# FFmpeg 전용 Worker 설정 저장
+		with open(worker_config_path, 'w', encoding='utf-8') as f:
+			yaml.dump(ffmpeg_worker_config, f, default_flow_style=False, allow_unicode=True)
+		
+		print("FFmpeg 전용 Worker 설정이 생성되었습니다.")
+		
+	except Exception as e:
+		print(f"FFmpeg Worker 설정 생성 오류: {e}")
+
+def _setup_ffmpeg_structure(flamenco_dir: Path) -> None:
+	"""FFmpeg 전용 폴더 구조를 생성합니다. (V3: 기존 구조는 건드리지 않음)"""
+	# FFmpeg 전용 디렉토리 생성
+	ffmpeg_directories = [
+		'ffmpeg-jobs',
+		'ffmpeg-logs',
+		'ffmpeg-output',
+		'ffmpeg-temp'
+	]
+	
+	created_dirs = []
+	for dir_name in ffmpeg_directories:
+		dir_path = flamenco_dir / dir_name
+		if not dir_path.exists():
+			dir_path.mkdir(exist_ok=True)
+			created_dirs.append(dir_name)
+	
+	if created_dirs:
+		print(f"생성된 FFmpeg 전용 디렉토리: {', '.join(created_dirs)}")
+	else:
+		print("모든 FFmpeg 전용 디렉토리가 이미 존재합니다.")
+
 def _setup_manager_config(manager_config_path: Path) -> None:
-	"""Manager 설정을 FFmpeg Encoder에 맞게 수정합니다."""
+	"""Manager 설정을 FFmpeg Encoder에 맞게 수정합니다. (Legacy - V2용)"""
 	try:
 		with open(manager_config_path, 'r', encoding='utf-8') as f:
 			config = yaml.safe_load(f)
@@ -192,7 +294,7 @@ def _setup_manager_config(manager_config_path: Path) -> None:
 		print(f"Manager 설정 수정 오류: {e}")
 
 def _setup_worker_config(worker_config_path: Path) -> None:
-	"""Worker 설정 파일을 생성하거나 업데이트합니다."""
+	"""Worker 설정 파일을 생성하거나 업데이트합니다. (Legacy - V2용)"""
 	try:
 		# 기존 설정 파일이 있는지 확인
 		if worker_config_path.exists():
@@ -378,7 +480,7 @@ if __name__ == '__main__':
 		print("FFmpeg Python 백업 컴파일러가 이미 존재합니다.")
 
 def _setup_flamenco_structure(flamenco_dir: Path) -> None:
-	"""Flamenco 폴더 구조를 생성합니다."""
+	"""Flamenco 폴더 구조를 생성합니다. (Legacy - V2용)"""
 	# 필요한 디렉토리 생성
 	directories = [
 		'jobs',
@@ -486,12 +588,19 @@ class FlamencoClient:
 		})
 
 	def submit_ffmpeg_job(self, title: str, command: list[str], files: list[str], output_path: str = None) -> Dict[str, Any]:
+		print(f"[DEBUG] Submitting Flamenco job: {title}")
+		print(f"[DEBUG] Command: {' '.join(command)}")
+		print(f"[DEBUG] Files: {files}")
+		print(f"[DEBUG] Output path: {output_path}")
+		
 		# Get platform and convert to lowercase
 		platform = get_submitter_platform().lower()
+		print(f"[DEBUG] Platform: {platform}")
 		
 		# Flamenco 3.7에서 사용 가능한 작업 타입들을 순서대로 시도
 		command_str = " ".join(command)
 		working_dir = str(Path(files[0]).parent) if files else "."
+		print(f"[DEBUG] Working directory: {working_dir}")
 		
 		# Flamenco 3.7에서 사용 가능한 작업 타입들 (공식 문서 기준)
 		job_types_to_try = [
