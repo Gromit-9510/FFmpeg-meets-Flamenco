@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
 		self.addDockWidget(Qt.BottomDockWidgetArea, self.log_dock)
 
 		self.settings_panel.encode_btn.clicked.connect(self._on_encode_clicked)
+		self.settings_panel.multi_encode_btn.clicked.connect(self._on_multi_encode_clicked)
 		self.settings_panel.submit_flamenco_btn.clicked.connect(self._on_submit_flamenco)
 		self.settings_panel.save_preset_clicked.connect(self._on_save_preset)
 		self.settings_panel.load_preset_clicked.connect(self._on_load_preset)
@@ -189,6 +190,103 @@ class MainWindow(QMainWindow):
 
 		self._start_worker(cmd)
 
+	def _on_multi_encode_clicked(self) -> None:
+		"""여러 설정으로 동시 인코딩합니다."""
+		# Get checked file paths from queue
+		checked_files = self.queue_panel.get_checked_files()
+		
+		if not checked_files:
+			self.status.showMessage("No files checked", 3000)
+			return
+
+		# Get multi settings
+		multi_settings = self.settings_panel.get_multi_settings()
+		
+		if not multi_settings:
+			QMessageBox.warning(self, "Warning", "Multi-Encode 탭에서 설정을 추가하세요.")
+			return
+
+		# Show output dialog for first setting
+		from .output_dialog import OutputDialog
+		first_settings = VideoSettings(**multi_settings[0])
+		dialog = OutputDialog(checked_files, first_settings, self)
+		if dialog.exec() != QDialog.Accepted:
+			return
+
+		# Start multi-encoding
+		self._start_multi_encoding(checked_files, multi_settings, dialog)
+
+	def _start_multi_encoding(self, files, settings_list, output_dialog):
+		"""여러 설정으로 순차적으로 인코딩을 시작합니다."""
+		from pathlib import Path
+		
+		# 모든 인코딩 작업을 큐에 추가
+		encoding_queue = []
+		
+		for i, settings_dict in enumerate(settings_list):
+			settings = VideoSettings(**settings_dict)
+			
+			# 각 설정에 대해 출력 경로 생성
+			for file_path in files:
+				# 원본 파일명에서 확장자 제거
+				file_stem = Path(file_path).stem
+				file_ext = Path(file_path).suffix
+				
+				# 설정에 따른 접미사 추가
+				codec_id = settings.video_codec
+				codec_name = self.settings_panel._get_user_friendly_codec_name(codec_id)
+				crf = settings.crf
+				bitrate = settings.bitrate
+				
+				# 파일명에 사용할 안전한 코덱 이름 생성 (특수문자 제거)
+				safe_codec_name = codec_name.replace(" ", "_").replace("(", "").replace(")", "").replace("-", "_")
+				
+				if bitrate:
+					suffix = f"_{safe_codec_name}_{bitrate}"
+				else:
+					suffix = f"_{safe_codec_name}_crf{crf}"
+				
+				# 출력 파일명 생성
+				output_filename = f"{file_stem}{suffix}.{settings.container}"
+				
+				# 출력 경로 생성
+				output_dir = Path(output_dialog.get_output_path(file_path)).parent
+				output_path = output_dir / output_filename
+				
+				# FFmpeg 명령어 생성
+				cmds = build_ffmpeg_commands(file_path, str(output_path), settings)
+				cmd = cmds[-1]  # Single pass or second pass
+				
+				# 큐에 추가
+				encoding_queue.append({
+					'cmd': cmd,
+					'file': file_path,
+					'output': str(output_path),
+					'settings': settings
+				})
+		
+		# 순차적으로 실행
+		self._encoding_queue = encoding_queue
+		self._current_encoding_index = 0
+		self._start_next_encoding()
+
+	def _start_next_encoding(self) -> None:
+		"""다음 인코딩 작업을 시작합니다."""
+		if not hasattr(self, '_encoding_queue') or self._current_encoding_index >= len(self._encoding_queue):
+			self.log_panel.append_line("모든 멀티 인코딩 작업이 완료되었습니다.")
+			return
+		
+		# 현재 인코딩 작업 정보
+		current_job = self._encoding_queue[self._current_encoding_index]
+		cmd = current_job['cmd']
+		file_name = Path(current_job['file']).name
+		settings = current_job['settings']
+		
+		# 로그 출력
+		self.log_panel.append_line(f"멀티 인코딩 {self._current_encoding_index + 1}/{len(self._encoding_queue)}: {file_name} - {settings.video_codec} CRF {settings.crf}")
+		
+		# 워커 시작
+		self._start_worker(cmd)
 
 	def _start_worker(self, cmd: list[str]) -> None:
 		self.thread = QThread(self)
@@ -203,6 +301,11 @@ class MainWindow(QMainWindow):
 		self.status.showMessage(f"FFmpeg finished with code {code}", 5000)
 		self.thread.quit()
 		self.thread.wait()
+		
+		# 멀티 인코딩 중인 경우 다음 작업 시작
+		if hasattr(self, '_encoding_queue') and hasattr(self, '_current_encoding_index'):
+			self._current_encoding_index += 1
+			self._start_next_encoding()
 
 	def _on_submit_flamenco(self) -> None:
 		# Submit directly using settings

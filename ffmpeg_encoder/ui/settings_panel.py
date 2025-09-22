@@ -15,6 +15,9 @@ from PySide6.QtWidgets import (
 	QFileDialog,
 	QLabel,
 	QGroupBox,
+	QListWidget,
+	QListWidgetItem,
+	QMessageBox,
 )
 import os
 import json
@@ -50,8 +53,10 @@ class SettingsPanel(QWidget):
 		layout.addLayout(preset_row)
 
 		self.encode_btn = QPushButton("Encode with FFmpeg")
+		self.multi_encode_btn = QPushButton("Multi-Encode")
 		self.submit_flamenco_btn = QPushButton("Submit to Flamenco")
 		layout.addWidget(self.encode_btn)
+		layout.addWidget(self.multi_encode_btn)
 		layout.addWidget(self.submit_flamenco_btn)
 		layout.addStretch(1)
 
@@ -139,6 +144,39 @@ class SettingsPanel(QWidget):
 		advanced_layout.addRow("Max File Size:", self.max_filesize)
 		advanced_layout.addRow("Extra Params:", self.extra_params)
 		layout.addWidget(advanced_group)
+		
+		# Multi-encode settings
+		multi_group = QGroupBox("Multi-Encode Settings")
+		multi_layout = QVBoxLayout(multi_group)
+		
+		# 설명
+		info_label = QLabel("여러 설정으로 순차 인코딩할 수 있습니다. 예: h264 CRF 20, h264 CRF 30")
+		info_label.setWordWrap(True)
+		info_label.setStyleSheet("color: #666; font-size: 11px; padding: 5px;")
+		multi_layout.addWidget(info_label)
+		
+		# 설정 목록
+		self.multi_settings_list = QListWidget()
+		self.multi_settings_list.setMaximumHeight(150)
+		multi_layout.addWidget(self.multi_settings_list)
+		
+		# 버튼들
+		button_layout = QHBoxLayout()
+		self.add_setting_btn = QPushButton("Add Current Settings")
+		self.remove_setting_btn = QPushButton("Remove Selected")
+		self.clear_settings_btn = QPushButton("Clear All")
+		
+		button_layout.addWidget(self.add_setting_btn)
+		button_layout.addWidget(self.remove_setting_btn)
+		button_layout.addWidget(self.clear_settings_btn)
+		multi_layout.addLayout(button_layout)
+		
+		layout.addWidget(multi_group)
+		
+		# 연결
+		self.add_setting_btn.clicked.connect(self._add_current_settings)
+		self.remove_setting_btn.clicked.connect(self._remove_selected_setting)
+		self.clear_settings_btn.clicked.connect(self._clear_all_settings)
 		
 		layout.addStretch()
 		return w
@@ -523,4 +561,107 @@ class SettingsPanel(QWidget):
 		"""Handle container format change - update available codecs."""
 		container = self.container_format.currentText()
 		self._populate_user_friendly_codecs(container)
+
+	def _get_user_friendly_codec_name(self, codec_id: str) -> str:
+		"""코덱 ID를 사용자 친화적인 이름으로 변환합니다."""
+		if hasattr(self, 'codec_data') and codec_id in self.codec_data:
+			return self.codec_data[codec_id]['name']
+		
+		# Fallback: codec_id를 그대로 반환
+		return codec_id
+
+	def _add_current_settings(self) -> None:
+		"""현재 설정을 목록에 추가합니다."""
+		settings = self.get_settings()
+		
+		# 사용자 친화적인 코덱 이름 가져오기
+		codec_id = settings["video_codec"]
+		codec_name = self._get_user_friendly_codec_name(codec_id)
+		crf = settings["crf"]
+		bitrate = settings["bitrate"]
+		
+		if bitrate:
+			name = f"{codec_name} - {bitrate}"
+		else:
+			name = f"{codec_name} - CRF {crf}"
+		
+		# 중복 확인
+		for i in range(self.multi_settings_list.count()):
+			item = self.multi_settings_list.item(i)
+			if item.text() == name:
+				QMessageBox.warning(self, "Warning", "이미 동일한 설정이 있습니다.")
+				return
+		
+		# 추가
+		item = QListWidgetItem(name)
+		item.setData(Qt.UserRole, settings)
+		self.multi_settings_list.addItem(item)
+
+	def _remove_selected_setting(self) -> None:
+		"""선택된 설정을 제거합니다."""
+		current_row = self.multi_settings_list.currentRow()
+		if current_row >= 0:
+			self.multi_settings_list.takeItem(current_row)
+
+	def _clear_all_settings(self) -> None:
+		"""모든 설정을 제거합니다."""
+		self.multi_settings_list.clear()
+
+	def get_multi_settings(self) -> list:
+		"""여러 설정 목록을 반환합니다."""
+		settings_list = []
+		for i in range(self.multi_settings_list.count()):
+			item = self.multi_settings_list.item(i)
+			settings = item.data(Qt.UserRole)
+			settings_list.append(settings)
+		return settings_list
+
+	def get_settings(self) -> dict:
+		"""현재 설정을 딕셔너리로 반환합니다."""
+		# Get video codec ID from user-friendly selection
+		video_codec_data = self.video_codec.currentData()
+		video_codec = video_codec_data if video_codec_data else self.video_codec.currentText()
+		
+		# GPU enable is determined by codec selection
+		gpu_enable = "nvenc" in video_codec
+		
+		# Low latency is determined by codec selection
+		low_latency = "_ll" in video_codec
+		
+		return {
+			"container": self.container_format.currentText(),
+			"video_codec": video_codec,
+			"crf": self.crf.value(),
+			"bitrate": self.bitrate.text().strip() or None,
+			"gpu_enable": gpu_enable,
+			"low_latency": low_latency,
+			"tune": "none",  # Not used anymore
+			"audio_codec": self.audio_codec.currentText(),
+			"audio_bitrate": self.audio_bitrate.text().strip() or None,
+			"max_filesize": getattr(self, 'max_filesize', QLineEdit()).text().strip() or None,
+		}
+
+	def set_settings(self, settings: dict) -> None:
+		"""딕셔너리로 설정을 적용합니다."""
+		if "container" in settings:
+			self.container_format.setCurrentText(settings["container"])
+		if "video_codec" in settings:
+			# Set video codec by finding the matching item
+			for i in range(self.video_codec.count()):
+				if self.video_codec.itemData(i) == settings["video_codec"]:
+					self.video_codec.setCurrentIndex(i)
+					break
+			else:
+				# Fallback to text matching
+				self.video_codec.setCurrentText(settings["video_codec"])
+		if "crf" in settings:
+			self.crf.setValue(settings["crf"])
+		if "bitrate" in settings:
+			self.bitrate.setText(settings["bitrate"] or "")
+		if "audio_codec" in settings:
+			self.audio_codec.setCurrentText(settings["audio_codec"])
+		if "audio_bitrate" in settings:
+			self.audio_bitrate.setText(settings["audio_bitrate"] or "")
+		if "max_filesize" in settings and hasattr(self, 'max_filesize'):
+			self.max_filesize.setText(settings["max_filesize"] or "")
 
